@@ -1,0 +1,4 @@
+opencv-python
+pyserial
+PySide6
+vmbpy>=1.2,<2
