@@ -55,6 +55,17 @@ VS Code 中选择解释器：
 使用相机前还需要安装 Allied Vision Vimba X SDK，并确认相机的 USB/GigE
 传输层驱动已安装。`vmbpy` 只提供 Python API，不能替代系统级 SDK 和驱动。
 
+## 串口发送示例
+
+安装依赖并连接串口设备后，在 PowerShell 中运行：
+
+```powershell
+python hardware\LED_controller.py COM3 --message "S10255#" --baudrate 9600
+```
+
+将 `COM3` 替换为实际串口号。示例默认使用 9600 波特率，并以 UTF-8
+编码发送字符串；如需发送换行符，请将其包含在 `--message` 中。
+
 ## 检查依赖
 
 安装依赖后，可以运行以下命令检查每个包是否已安装、版本是否符合要求并且能够正常导入：
