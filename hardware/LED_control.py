@@ -74,6 +74,26 @@ def readControlMode() -> str:
 
     raise ValueError(f"控制器应答格式异常: {response!r}")
 
+def readLightness(led_number: int) -> int:
+    """
+    读取指定LED的亮度值。
+    Args:
+        led_number: 指定LED编号如，1~4。
+    Raises:
+        serial.SerialException: 串口未找到、无法打开或通信失败时抛出。
+        ValueError: 未收到应答时抛出。
+    """
+    led_number_str = ("A", "B", "C", "D")[led_number - 1]
+
+    with serial.Serial(COM, baudrate=19200, timeout=1) as ser:
+        ser.write(f"S{led_number_str}#".encode("ascii"))
+        response = ser.readline().decode("utf-8", errors="ignore").strip()
+
+    if not response:
+        raise ValueError(f"读取 LED {led_number}亮度超时，未收到控制器应答")
+
+    return int(response[1:5])
+
 def setLightness(led_number: int, lightness_value: int):
     """
     设定
@@ -98,3 +118,9 @@ def setLightness(led_number: int, lightness_value: int):
 
     serialSend(message)
 
+if __name__ == "__main__":
+    # 示例用法
+    initCOM("COM5")  # 初始化串口号
+    turnOn()         # 设置为常亮模式
+    setLightness(1,128)  # 设置LED 1的亮度为128
+    print(readLightness(1))  # 读取LED 1的亮度
