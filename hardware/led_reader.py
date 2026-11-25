@@ -4,17 +4,19 @@ DPS1024-4T-125 数字光源控制器：读取指定通道当前亮度。
 本模块只负责“读取当前亮度值”这一任务，自包含串口处理，
 不依赖队友的 LED_control.py，两份代码可在同一程序中分别导入、协同运行。
 
-协议（说明书 3.3 节）：
+协议（说明书 3.3 节，已对照手册核对）：
 - 串口：RS232，19200 波特率，8 数据位，1 停止位，无校验（8N1）。
-- 查询帧：S + 通道(A~D) + #，例如 SA#。
-- 应答：小写通道字母 + 4 位亮度值，例如 a0168。
+- 亮度查询帧：S + 通道(A~D) + #，例如 SA#。
+- 亮度应答：小写通道字母 + 4 位十进制亮度值，例如 a0168；范围 0000-0255。
+- 手册未给应答帧定义 # 或换行结束符；解析前已 strip 首尾空白，正则仅容忍尾随
+  的换行/回车，不接受井号。真机若回固定结束符，再收紧 RESPONSE_PATTERN。
 
 协同用法示例：
     from hardware import LED_control   # 队友：开灯 / 调光
     from hardware import led_reader     # 本模块：回读亮度
 
-    LED_control.initCOM("COM4")
-    led_reader.initCOM("COM4")
+    LED_control.initCOM("COMx")
+    led_reader.initCOM("COMx")
 
     LED_control.setLightness(1, 168)
     value = led_reader.readLightness(1)
@@ -30,6 +32,11 @@ BYTESIZE = serial.EIGHTBITS
 STOPBITS = serial.STOPBITS_ONE
 PARITY = serial.PARITY_NONE
 READ_TIMEOUT = 1.0
+
+# 应答整帧格式：小写通道字母 + 4 位十进制亮度（手册 0000-0255）。
+# fullmatch 校验整帧，回包前后夹有杂质、串入其他通道数据都会被拒绝。
+# 手册未定义应答结束符；首尾空白已在解码后 strip，正则只容忍尾随 \r\n。
+RESPONSE_PATTERN = re.compile(r"[a-d](\d{4})[\r\n]*")
 
 # 模块级串口号，由 initCOM 设置；readLightness 也可直接传入 port 覆盖
 _port = ""
@@ -73,15 +80,19 @@ def _open(port: str) -> serial.Serial:
 
 
 def _query(message_str: str, port: str) -> str:
-    """发送查询指令并读取应答文本（UTF-8 解码，去除首尾空白）。"""
+    """发送查询指令并读取应答文本（严格 UTF-8 解码，去除首尾空白）。
+
+    解码失败（含非法字节）时直接抛出 UnicodeDecodeError，不静默丢弃字节。
+    """
     with _open(port) as ser:
         ser.write(message_str.encode("utf-8"))
         ser.flush()
         # 优先按行读取；若设备不回换行符，再把缓冲内剩余字节一次性读出
-        response = ser.readline().decode("utf-8", errors="ignore").strip()
-        if not response and ser.in_waiting:
-            response = ser.read(ser.in_waiting).decode("utf-8", errors="ignore").strip()
-    return response
+        raw = ser.readline()
+        if not raw and ser.in_waiting:
+            raw = ser.read(ser.in_waiting)
+    # 严格解码：无法解码的字节必须显式报错，不能 errors="ignore" 静默丢弃
+    return raw.decode("utf-8", errors="strict").strip()
 
 
 def readLightness(led_number: int, port: str = "") -> int:
@@ -104,10 +115,16 @@ def readLightness(led_number: int, port: str = "") -> int:
     if not response:
         raise ValueError(f"通道 {led_number} 读取超时，未收到控制器应答（查询帧: {query}）")
 
-    # 应答格式: a0168（小写通道字母 + 4 位十进制亮度）
-    match = re.search(rf"{led_char.lower()}(\d{{4}})", response)
+    # 整帧校验：通道小写字母 + 4 位亮度；fullmatch 拒绝前后杂质、串道数据。
+    match = RESPONSE_PATTERN.fullmatch(response)
     if not match:
         raise ValueError(f"通道 {led_number} 应答格式异常: {response!r}（查询帧: {query}）")
+
+    # 校验回显通道与请求通道一致，防止串错通道的回包被误读。
+    if response[0] != led_char.lower():
+        raise ValueError(
+            f"通道 {led_number} 应答串道: 回包首字母为 {response[0]!r}（查询帧: {query}，应答: {response!r}）"
+        )
 
     lightness_value = int(match.group(1))
     if not 0 <= lightness_value <= 255:
