@@ -26,6 +26,54 @@ def serialSend(message_str: str) -> None:
 
 # serialSend("S_CTRL:XXXX#")
 
+def setControlMode(mode: str) -> None:
+    """
+    设置控制器的常亮常灭模式。
+    Args:
+        mode: "0001" 表示常亮，"0000" 表示常灭。
+    Raises:
+        ValueError: mode 不是说明书规定的模式时抛出。
+        serial.SerialException: 串口未找到、无法打开或通信失败时抛出。
+    """
+    if mode not in ("0000", "0001"):
+        raise ValueError("mode 只能是 '0000'（常灭）或 '0001'（常亮）")
+
+    serialSend(f"S_CTRL:{mode}#")
+
+
+def turnOn() -> None:
+    """设置控制器为常亮模式。"""
+    setControlMode("0001")
+
+
+def turnOff() -> None:
+    """设置控制器为常灭模式。"""
+    setControlMode("0000")
+
+
+def readControlMode() -> str:
+    """
+    读取控制器的常亮常灭模式。
+    Returns:
+        "0001" 表示常亮，"0000" 表示常灭。
+    Raises:
+        serial.SerialException: 串口未找到、无法打开或通信失败时抛出。
+        ValueError: 未收到应答或应答格式异常时抛出。
+    """
+    with serial.Serial(COM, baudrate=19200, timeout=1) as ser:
+        ser.write(b"S_CTRL:#")
+        response = ser.readline().decode("utf-8", errors="ignore").strip()
+
+    if not response:
+        raise ValueError("读取常亮常灭模式超时，未收到控制器应答")
+
+    if response.startswith("_ctrl:"):
+        mode = response.split(":", 1)[1]
+        if mode in ("0000", "0001"):
+            return mode
+
+    raise ValueError(f"控制器应答格式异常: {response!r}")
+
 def setLightness(led_number: int, lightness_value: int):
     """
     设定
